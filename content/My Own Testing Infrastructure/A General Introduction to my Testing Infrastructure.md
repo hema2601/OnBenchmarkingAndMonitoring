@@ -1,5 +1,5 @@
 ---
-title: On Benchmarking and Monitoring
+title: A General Introduction to my Testing Infrastructure
 draft: false
 tags:
 ---
@@ -24,6 +24,29 @@ The requirements I had for my testbed straightforward:
 4. Automatically visualize my data in a way that is compatible with my work setup (All the data being located on a remote server with no GUI)
 
 
+To achieve this, the infrastructure consists of multiple components.
+
+The individual parts and their interactions can be seen in the figure below:
+![[Pasted image 20250808114154.png]]
 
 
-/
+# What Can you Learn Here?
+
+Learn about the individual components:
+1. [[Single Experiment Script]]
+2. [[Experiment Wrapper]]
+3. [[Raw Data Converter]]
+4. [[Experiment Iterator]]
+5. [[Setup Iterator]]
+6. [[Summarizer]]
+7. [[Web Server]]
+
+Learn about configuring the infrastructure for your own system:
+1. [[Setting up and Running any Experiments in Your Own Environment]]
+
+Adding your own components to the infrastructure:
+1. [[Adding New Data Sources]]
+2. [[Adding New Visualizations]]
+3. [[Adding New Experimental Scripts]]
+4. [[Adding New Experimental Parameters]]
+
