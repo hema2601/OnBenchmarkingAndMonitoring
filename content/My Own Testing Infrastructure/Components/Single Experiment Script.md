@@ -3,11 +3,11 @@ title: Single Experiment Script
 draft: false
 tags:
 ---
-<<|[[Experiment Wrapper|next]]>>
+
 
 The single experiment script is the heart of the testing infrastructure.
 
-This is because in the beginning, my 'testing infrastructure' only consisted of this very bloated piece of code. Eventually, I started to build the other components around it to make everything more manageable and  configurable. 
+This is because in the beginning, my 'testing infrastructure' only consisted of this very bloated piece of code. Eventually, I started to build the other components around it to make everything more manageable and configurable. 
 
 Still, most of the actual experiment setup is happening in this script. Everything else is just automation and output data processing, really.
 
@@ -57,7 +57,7 @@ $IPERF_BIN -s -1 -J $IPERF_CUSTOM_ARGS > $current_path/iperf.json &
 ```
 
 The `-s` option indicates that we are running the server, the `-1` options says that we want to end the server after one run instead of having it run persistently, and `-J` makes iperf print its output in json-format.
-iperf's output is then redirected into an iperf.json file in the `current_path` and we use the `&` to detach the iperf process from hte command line, so we don't wait for it to finish.
+iperf's output is then redirected into an iperf.json file in the `current_path` and we use the `&` to detach the iperf process from the command line, so we don't wait for it to finish.
 
 The `IPERF_BIN` and `IPERF_CUSTOM_ARGS` serve the purpose of flexibly converting between running vanilla iperf or my [custom iperf](https://github.com/hema2601/iperf).
 
@@ -81,7 +81,7 @@ fi
 This has the effect that running the experiment script on a host without my custom iperf will just run vanilla iperf, but on a host that has my custom iperf installed, it automatically uses the custom version.
 
 > [!caution]- Naming of the custom iperf
-> The binary of my custom iperf being called `iperf3_napi` is not something that works out-of-the-box when installing from my git repository. When installing custom iperf, I only compile it locally using `make` and created a symlink using `ln` in `/usr/bin` called `iperf3_napi` that point to the compiled binary in my local repository. Do not run `make install` on my custom iperf because it might overwrite the normal iperf and I have not tested my iperf extensively enough to recommend this.
+> The binary of my custom iperf being called `iperf3_napi` is not something that works out-of-the-box when installing from my git repository. When installing custom iperf, I only compile it locally using `make` and created a symlink using `ln` in `/usr/bin` called `iperf3_napi` that points to the compiled binary in my local repository. Do not run `make install` on my custom iperf because it might overwrite the normal iperf and I have not tested my iperf extensively enough to recommend this.
 
 The custom iperf arguments are hardcoded at the moment, but those might be another good candidate to be [[Adding New Experimental Parameters|added as a new parameter]]!
 
@@ -182,5 +182,3 @@ And that's the application execution portion of the script. I'll probably start 
 ## iperf Experiment Duration - *time*
 
 
-
-<<|[[Experiment Wrapper|next]]>>

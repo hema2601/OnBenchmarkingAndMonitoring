@@ -8,7 +8,7 @@ When adding a new experimental parameter it is important to keep in mind where t
 
 My infrastructure goes through multiple steps of indirection before actually using a parameter. The order is something like this:
 
-[[Setup Iterator|Setup Iterator]] -> [[Experiment Iterator]] -> [[Experiment Wrapper]]r -> [[Single Experiment Script|Experiment Script]]
+[[Setup Iterator|Setup Iterator]] -> [[Experiment Iterator]] -> [[Experiment Wrapper]] -> [[Single Experiment Script|Experiment Script]]
 
 For now, lets exclude the act of actually using your parameter. First, let's just pass a parameter through the appropriate channels into the experiment script.
 

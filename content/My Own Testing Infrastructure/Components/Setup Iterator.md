@@ -3,7 +3,7 @@ title: Setup Iterator
 draft: false
 tags:
 ---
-<<[[Experiment Iterator|previous]]|[[Summarizer|next]]>>
+
 
 The setup iterator is the starting point of any experiment suite.
 It exists to set up the correct environment before starting the actual experiment and coordinating multiple setups. 
@@ -141,4 +141,3 @@ run_exp $exp_name $rep $conns $exponential
 For each experiment, we need to give the experiment a name and define the things that are unique to it.
 Here, we want to test RSS, so that is the name we give the experiment 
 
-<<[[Experiment Iterator|previous]]|[[Summarizer|next]]>>

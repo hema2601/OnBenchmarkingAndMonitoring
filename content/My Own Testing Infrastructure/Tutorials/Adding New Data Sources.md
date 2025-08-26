@@ -196,7 +196,7 @@ python3 $current_path/file_formatter.py $exp_name IRQ SOFTIRQ PACKET_CNT IPERF S
 Congratulations! You have implemented the translation from the raw data file to a well-formatted json.
 ### 1.1.2 Integrate into Summarizer
 
-The integration into the [[My Testing Infrastructure - Summarizer|summarizer]] is pretty straight-forward.
+The integration into the [[Summarizer|summarizer]] is pretty straight-forward.
 The summarizer doesn't need to know anything about your data, it only needs to know that it exists so that it can be summarized.
 All you need to do is tell it that your file exists by adding its name to the file list.
 Before:
