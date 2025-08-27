@@ -3,7 +3,8 @@ title: Adding New Data Sources
 draft: false
 tags:
 ---
- 
+DONE
+
 When adding a new data source there are two steps to be considered:
 
 1. Integrate the automatic data collection into the experiment script

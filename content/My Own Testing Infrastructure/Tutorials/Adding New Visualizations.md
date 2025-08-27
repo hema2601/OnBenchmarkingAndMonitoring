@@ -3,7 +3,8 @@ title: Adding New Visualizations
 draft: false
 tags:
 ---
- 
+DONE
+
 All visualizations are done using vega lite and are displayed through the webserver. If you want to add a visualization, you have to:
 1. Create your visualization in vega lite
 2. Create and include your visualization as a file into the webserver

@@ -3,7 +3,8 @@ title: Adding New Experimental Parameters
 draft: false
 tags:
 ---
- 
+DONE
+  
 When adding a new experimental parameter it is important to keep in mind where that parameter is set vs. where the actual setup/application is run that is affected by the parameter.
 
 My infrastructure goes through multiple steps of indirection before actually using a parameter. The order is something like this:
