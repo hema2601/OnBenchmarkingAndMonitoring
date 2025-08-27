@@ -16,11 +16,6 @@ This document (now website I guess...) aims to conserve that in written form so 
 During my research, I spent a significant amount of time automating my experiments. While I did not do a perfect job at making it general, I do think it turned out general enough so that it might be beneficial to other people wanting to run experiments at scale (mainly iperf...).
 
 ---
-**[[The Exposed Counters of Linux]]**
-
-There actually is a lot of data that is exposed through primarily the /proc subdirectory in the kernel. I found that documentation is often scarce and the most effective way of learning about these counters is through looking at source code and already existing tools utilizing them. Here, I want to collect some of the counters that have proven useful to me.
-
----
 
 # What I may or may not include at a later point
 

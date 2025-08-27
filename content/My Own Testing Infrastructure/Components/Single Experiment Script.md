@@ -147,6 +147,68 @@ And that's the application execution portion of the script. I'll probably start 
 
 # Orchestrating Data Collection
 
+As explained in the [[Adding New Data Sources|data source tutorial]], there are essentially three types of data collection in experiment script:
+1. Counters
+2. Background Programs
+3. Application
+The application data collection was already explained in the [[#Running the Target Application]] part, since it is simply the output from the iperf execution.
+I will explain the data collection of the others in the following parts.
+
+## Counters
+
+All the counter data used in the experiment is captured with the help of the `before.sh` and `after.sh` scripts. As the name suggests, `before.sh` writes the state of the counters before the experiment into a temporary file and `after.sh` does the same with the counters after the experiment. Then, the `after.sh` script also concats the two temporary files into a raw data file that is then going to be converted into json data using the [[Raw Data Converter]].
+
+As of writing this document, there are 10 raw data files compiled from counters, 4 of which are taken from a custom proc file created by the IAPS module. I will go over the other 6, where their data is taken from and what the data describes.
+
+### ethtool counters
+
+ethtool is a tool with an abundance of functionalities, but in essence, it is there to communicate with network interfaces. When using the `-S` option, it prints out various statistics. For my experiments, I needed the number of packets that arrived at my NIC and the number of packets that were dropped. This was achieved with the code below.
+
+>[!warning]- Portability of ethtool statistics
+>The naming of the ethtool counters is not standardized, but rather up to the company providing the drivers. The below code for example only works for Intel NICs, because the names of the same stats published through a Mellanox driver are different. If you run experiments in a new environment and you are having issues with your ethtool-collected data (either in the [[Raw Data Converter]] or during visualization), check your ethtool output!
+
+```bash
+ethtool -S ${intf} | grep 'packets\|dropped:' > before_pkt.txt
+```
+
+### softirq counters
+
+In the proc subsystem, there is a file called `softirqs` that keeps a count on all types of softirqs and on which core they were triggered. The contents look like this:
+![[Pasted image 20250828081514.png]]
+For my experiments, I was only interested in the number of softirqs involving networking, so I filtered them out using `grep`. 
+
+```bash
+cat /proc/softirqs | grep NET_ > before_soft_irq.txt 
+```
+
+### irq counters
+
+This counter is the only one that is not a one liner. Normal hardware interrupts are counted in a similar fashion to softirqs. However, instead of having 10 types of interrupts like the sotfirqs, there can be many more hardware interrupts in your system, depending on your hardware specs and connected peripheral devices. Therefore, I first write the list of interrupts associated with my network interface into a temporary file and then only save the counters associated with those interrupts into the data file.
+
+```bash
+$current_path/scripts/print_irq_cnt.sh $intf > tmp.txt
+cat /proc/interrupts | grep -f tmp.txt > before_irq.txt
+```
+
+The below is an example of the output of the `/proc/interrupts` file on a relatively small system. The numbers at the front are the numbers that every interrupt is identified with
+![[Pasted image 20250828083615.png]]
+
+### softnet counters
+```bash
+cat /proc/net/softnet_stat > before_softnet.txt
+```
+### proc/stat counters
+```bash
+cat /proc/stat > before_proc_stat.txt
+```
+### netstat counters
+```bash
+cat /proc/net/netstat > before_netstat.txt
+```
+
+## Background Programs
+
+
 # Argument List
 
 ## Experiment Name - *exp_name*
