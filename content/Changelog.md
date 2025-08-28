@@ -1,5 +1,5 @@
 - 2025-08-28 18:15 · [[Single Experiment Script]]
 - 2025-08-28 18:05 · [[Adding New Data Sources]]
-- 2025-08-28 17:34 · [[index]]
+- 2025-08-28 17:34 · [[docs/index]]
 - 2025-08-27 15:28 · [[Adding New Visualizations]]
 - 2025-08-27 15:28 · [[Adding New Experimental Parameters]]
