@@ -183,24 +183,67 @@ cat /proc/softirqs | grep NET_ > before_soft_irq.txt
 
 ### irq counters
 
-This counter is the only one that is not a one liner. Normal hardware interrupts are counted in a similar fashion to softirqs. However, instead of having 10 types of interrupts like the sotfirqs, there can be many more hardware interrupts in your system, depending on your hardware specs and connected peripheral devices. Therefore, I first write the list of interrupts associated with my network interface into a temporary file and then only save the counters associated with those interrupts into the data file.
+This counter is the only one that is not a one liner. Normal hardware interrupts are counted in a similar fashion to softirqs. However, instead of having 10 types of interrupts like the sotfirqs, there can be many more hardware interrupts in your system, depending on your hardware specs and connected peripheral devices. Therefore, I first write the list of interrupts associated with my network interface into a temporary file and then only save the counters associated with those interrupts into the data file. It would also be possible to just write all the interrupts down and do the filtering within the [[Raw Data Converter]].
 
 ```bash
 $current_path/scripts/print_irq_cnt.sh $intf > tmp.txt
 cat /proc/interrupts | grep -f tmp.txt > before_irq.txt
 ```
 
-The below is an example of the output of the `/proc/interrupts` file on a relatively small system. The numbers at the front are the numbers that every interrupt is identified with
+The below is an example of the output of the `/proc/interrupts` file on a relatively small system. The numbers at the front are the numbers that every interrupt is identified with. On the right side are some high-level information, such as associated device and pcie addresses. 
 ![[Pasted image 20250828083615.png]]
 
 ### softnet counters
+
+The counters in `/proc/softnet_stat` provide information on packets that leave the netdevice subsystem into the actual network stack. On a default system, this is a rather boring counter. As you can see below, it is mainly just a bunch of zeros.
+![[Pasted image 20250828153731.png]]
+The data in softnet_stat becomes interesting once you start experimenting with software-based packet steering like RPS or RFS.
+Let's take a look what the different counters represent. Keep in mind that one row corresponds to the set of counters for one CPU core.
+
+>[!warning] The values are in hexadecimal! Keep that in mind when parsing!
+>
+>
+
+1st Column: Processed Packets
+	This is the only counter that is incremented on a normal system. It gets incremented in `__netif_receive_skb_core` (specifically [here](https://elixir.bootlin.com/linux/v6.16/source/net/core/dev.c#L5782)). This represents the number of GRO-aggregated packets entering the stack. Therefore, it will be different from the number of packets you would see reported by something like `ethtool`.
+2nd Column: Dropped Packets
+	This counter represents the number of packets dropped at **the softnet backlog**. Do not confuse it with packet drops at the NIC (Use `ethtool` for that). If this column is anything other than 0, you should reconsider your setup. The default maximum length of the backlog (which is used during software-based packet steering) is [configured to be 1000](https://elixir.bootlin.com/linux/v6.16/source/net/core/hotdata.c#L17). So if this counter is not 0, either you configured the backlog length to be very low, or your software queues are building up beyond 1000 packets, which would be very bad. Another third option is that a packet was dropped due to exceeding the CPU's flow limit, which is further explained in the 11th Column part.
+3rd Column: Time Squeeze
+	A 'time squeeze' in this situation refers to the scenario when one polling cycle of NAPI exceeds its allocated runtime. This happens in [two scenarios](https://elixir.bootlin.com/linux/v6.16/source/net/core/dev.c#L7611): Either when it has exhausted its [packet limit of 300 packets](https://elixir.bootlin.com/linux/v6.16/source/net/core/hotdata.c#L12), or it exceeded its [time limit of 2 jiffies](https://elixir.bootlin.com/linux/v6.16/source/net/core/hotdata.c#L14). In my experience, this counter increases very rarely. The napi structs used during software-based packet steering are [initialized to the value of `weight_p`](https://elixir.bootlin.com/linux/v6.16/source/net/core/dev.c#L12826), which is [set to 64](https://elixir.bootlin.com/linux/v6.16/source/net/core/dev.c#L4787), so their limit is well below the 300 packet limit. The napi structs used for the initial packet processing are defined by the drivers, so they might exceed the limit, but it is safe to assume that they will operate within a sensible limit. Most likely when the time squeeze counter is increased, it will be because some packet took abnormally long to be processed and therefore NAPI ran out of time.
+4th to 9th Column: Zero
+	These columns are hard-coded to be 0. I used some of these columns to publish my custom data counters without having to set up a new proc file.
+10th Column: Received RPS
+	This column counts how often a core received an RPS request. In other words, this is how often a core was notified through an IPI to start processing packets from the backlog. It is increased [here](https://elixir.bootlin.com/linux/v6.16/source/net/core/dev.c#L5035).
+11th Column: Flow Limit Count
+	I haven't worked with this counter a lot. To the best of my understanding, when using software-based packet steering, specifically when using RFS, every core is assigned a limit of how many concurrent flows it is allowed to handle. If a new skb arrives and causes the number of concurrent flows handled by the CPU core to overflow, the [counter is increased](https://elixir.bootlin.com/linux/v6.16/source/net/core/dev.c#L5132). In this case, the packet is dropped and the counter in column 2 will be increased as well. I don't think I have ever seen this counter increase in my experiments, so I never bothered to fully hunt down the logic of flow limits in the code, so take this explanation with a grain of salt.
+12th Column: Combined Queue length of the backlog
+	A full explanation of the queue logistics of the backlog would be a bit much at this point. Just know this: Packets on the backlog can either be on the `process_queue` - the place where packets are *actively processed* - or on the `input_pkt_queue` - the place where packets await active processing. The combined length of those queues is stored in the 12th column.
+13th Column: CPU number
+	*Finally*. After 12 index-less hexadecimal numbers somebody thought of adding an index to this proc file and probably wasn't able to add it at the beginning, because it would break things. 
+14th Column: input queue length
+	This value represents the number of packets currently awaiting active processing on the backlog. This value together with the value from the 15th column add up to the 12th column.
+15th Column: process queue length
+	This value represents the number of packets being actively processed by this CPU from the backlog. This value together with the value from the 14th column add up to the 12th column.
+
+If you want to check for yourself, the proc file is printed [here](https://elixir.bootlin.com/linux/v6.16/source/net/core/net-procfs.c#L145).
+
+In the `before.sh` script, the values are captured as shown below.
 ```bash
 cat /proc/net/softnet_stat > before_softnet.txt
 ```
 ### proc/stat counters
+
+The `/proc/stat` includes very fundamental counters. To the best of my knowledge, tools like `top` use it to display the CPU usage percentages. I never really looked in detail into how and where its individual counters are increased in the code, I just used resources online to understand them. Luckily, since it is such a fundamental file, there is decent documentation on it, like this [man page](https://man7.org/linux/man-pages/man5/proc_stat.5.html).
+I used the values from `/proc/stat` to get an idea for what work my individual CPUs were performing, to see whether my packet steering was working properly. 
+
+The data was collected as below:
 ```bash
 cat /proc/stat > before_proc_stat.txt
 ```
+
+>[!warning]- Do not treat my /proc/stat usage as a reliable example
+>When you look at the way I visualized this data (`web/components/cpu_util_graph.js`), you will see that I trial-and-errored it a little bit. My CPU utilization was never adding up to 100%, so I started subtracting 200 from the idle cycles. I do not remember whether I had better reasoning than "somehow the values look good when I decrease the idle cycles by 200". I always referred to my CPU utilization visualization with caution for that reason. If you want to get proper usage examples, refer to the implementation of tools like `top`, `htop`, or `sar`, which all use this proc file, as far as I know.
+
 ### netstat counters
 ```bash
 cat /proc/net/netstat > before_netstat.txt
