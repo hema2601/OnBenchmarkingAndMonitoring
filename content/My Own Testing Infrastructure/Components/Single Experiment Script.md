@@ -147,13 +147,13 @@ And that's the application execution portion of the script. I'll probably start 
 
 # Orchestrating Data Collection
 
-As explained in the [[Adding New Data Sources|data source tutorial]], there are essentially three types of data collection in experiment script:
+As explained in the [[Adding New Data Sources|data source tutorial]], there are essentially three types of data collection in my experiment script:
 1. Counters
 2. Background Programs
 3. Application
+
 The application data collection was already explained in the [[#Running the Target Application]] part, since it is simply the output from the iperf execution.
 I will explain the data collection of the others in the following parts.
-
 ## Counters
 
 All the counter data used in the experiment is captured with the help of the `before.sh` and `after.sh` scripts. As the name suggests, `before.sh` writes the state of the counters before the experiment into a temporary file and `after.sh` does the same with the counters after the experiment. Then, the `after.sh` script also concats the two temporary files into a raw data file that is then going to be converted into json data using the [[Raw Data Converter]].
@@ -164,13 +164,12 @@ As of writing this document, there are 10 raw data files compiled from counters,
 
 ethtool is a tool with an abundance of functionalities, but in essence, it is there to communicate with network interfaces. When using the `-S` option, it prints out various statistics. For my experiments, I needed the number of packets that arrived at my NIC and the number of packets that were dropped. This was achieved with the code below.
 
->[!warning]- Portability of ethtool statistics
->The naming of the ethtool counters is not standardized, but rather up to the company providing the drivers. The below code for example only works for Intel NICs, because the names of the same stats published through a Mellanox driver are different. If you run experiments in a new environment and you are having issues with your ethtool-collected data (either in the [[Raw Data Converter]] or during visualization), check your ethtool output!
-
 ```bash
 ethtool -S ${intf} | grep 'packets\|dropped:' > before_pkt.txt
 ```
 
+>[!warning]- Portability of ethtool statistics
+>The naming of the ethtool counters is not standardized, but rather up to the company providing the drivers. The below code for example only works for Intel NICs, because the names of the same stats published through a Mellanox driver are different. If you run experiments in a new environment and you are having issues with your ethtool-collected data (either in the [[Raw Data Converter]] or during visualization), check your ethtool output!
 ### softirq counters
 
 In the proc subsystem, there is a file called `softirqs` that keeps a count on all types of softirqs and on which core they were triggered. The contents look like this:
@@ -195,7 +194,7 @@ The below is an example of the output of the `/proc/interrupts` file on a relati
 
 ### softnet counters
 
-The counters in `/proc/softnet_stat` provide information on packets that leave the netdevice subsystem into the actual network stack. On a default system, this is a rather boring counter. As you can see below, it is mainly just a bunch of zeros.
+The counters in `/proc/net/softnet_stat` provide information on packets that leave the netdevice subsystem into the actual network stack. On a default system, this is a rather boring counter. As you can see below, it is mainly just a bunch of zeros.
 ![[Pasted image 20250828153731.png]]
 The data in softnet_stat becomes interesting once you start experimenting with software-based packet steering like RPS or RFS.
 Let's take a look what the different counters represent. Keep in mind that one row corresponds to the set of counters for one CPU core.
@@ -206,22 +205,31 @@ Let's take a look what the different counters represent. Keep in mind that one r
 
 1st Column: Processed Packets
 	This is the only counter that is incremented on a normal system. It gets incremented in `__netif_receive_skb_core` (specifically [here](https://elixir.bootlin.com/linux/v6.16/source/net/core/dev.c#L5782)). This represents the number of GRO-aggregated packets entering the stack. Therefore, it will be different from the number of packets you would see reported by something like `ethtool`.
+
 2nd Column: Dropped Packets
 	This counter represents the number of packets dropped at **the softnet backlog**. Do not confuse it with packet drops at the NIC (Use `ethtool` for that). If this column is anything other than 0, you should reconsider your setup. The default maximum length of the backlog (which is used during software-based packet steering) is [configured to be 1000](https://elixir.bootlin.com/linux/v6.16/source/net/core/hotdata.c#L17). So if this counter is not 0, either you configured the backlog length to be very low, or your software queues are building up beyond 1000 packets, which would be very bad. Another third option is that a packet was dropped due to exceeding the CPU's flow limit, which is further explained in the 11th Column part.
+
 3rd Column: Time Squeeze
 	A 'time squeeze' in this situation refers to the scenario when one polling cycle of NAPI exceeds its allocated runtime. This happens in [two scenarios](https://elixir.bootlin.com/linux/v6.16/source/net/core/dev.c#L7611): Either when it has exhausted its [packet limit of 300 packets](https://elixir.bootlin.com/linux/v6.16/source/net/core/hotdata.c#L12), or it exceeded its [time limit of 2 jiffies](https://elixir.bootlin.com/linux/v6.16/source/net/core/hotdata.c#L14). In my experience, this counter increases very rarely. The napi structs used during software-based packet steering are [initialized to the value of `weight_p`](https://elixir.bootlin.com/linux/v6.16/source/net/core/dev.c#L12826), which is [set to 64](https://elixir.bootlin.com/linux/v6.16/source/net/core/dev.c#L4787), so their limit is well below the 300 packet limit. The napi structs used for the initial packet processing are defined by the drivers, so they might exceed the limit, but it is safe to assume that they will operate within a sensible limit. Most likely when the time squeeze counter is increased, it will be because some packet took abnormally long to be processed and therefore NAPI ran out of time.
+
 4th to 9th Column: Zero
 	These columns are hard-coded to be 0. I used some of these columns to publish my custom data counters without having to set up a new proc file.
+
 10th Column: Received RPS
 	This column counts how often a core received an RPS request. In other words, this is how often a core was notified through an IPI to start processing packets from the backlog. It is increased [here](https://elixir.bootlin.com/linux/v6.16/source/net/core/dev.c#L5035).
+
 11th Column: Flow Limit Count
 	I haven't worked with this counter a lot. To the best of my understanding, when using software-based packet steering, specifically when using RFS, every core is assigned a limit of how many concurrent flows it is allowed to handle. If a new skb arrives and causes the number of concurrent flows handled by the CPU core to overflow, the [counter is increased](https://elixir.bootlin.com/linux/v6.16/source/net/core/dev.c#L5132). In this case, the packet is dropped and the counter in column 2 will be increased as well. I don't think I have ever seen this counter increase in my experiments, so I never bothered to fully hunt down the logic of flow limits in the code, so take this explanation with a grain of salt.
+
 12th Column: Combined Queue length of the backlog
 	A full explanation of the queue logistics of the backlog would be a bit much at this point. Just know this: Packets on the backlog can either be on the `process_queue` - the place where packets are *actively processed* - or on the `input_pkt_queue` - the place where packets await active processing. The combined length of those queues is stored in the 12th column.
+
 13th Column: CPU number
 	*Finally*. After 12 index-less hexadecimal numbers somebody thought of adding an index to this proc file and probably wasn't able to add it at the beginning, because it would break things. 
+
 14th Column: input queue length
 	This value represents the number of packets currently awaiting active processing on the backlog. This value together with the value from the 15th column add up to the 12th column.
+
 15th Column: process queue length
 	This value represents the number of packets being actively processed by this CPU from the backlog. This value together with the value from the 14th column add up to the 12th column.
 
@@ -245,13 +253,120 @@ cat /proc/stat > before_proc_stat.txt
 >When you look at the way I visualized this data (`web/components/cpu_util_graph.js`), you will see that I trial-and-errored it a little bit. My CPU utilization was never adding up to 100%, so I started subtracting 200 from the idle cycles. I do not remember whether I had better reasoning than "somehow the values look good when I decrease the idle cycles by 200". I always referred to my CPU utilization visualization with caution for that reason. If you want to get proper usage examples, refer to the implementation of tools like `top`, `htop`, or `sar`, which all use this proc file, as far as I know.
 
 ### netstat counters
+
+Finally, we have the netstat counters from `/proc/net/netstat`. This counter file is nice for parsing but terrible for reading. It looks like this:
+![[Pasted image 20250828173704.png]]
+
+What you can see are counters corresponding to well-defined networking events. The lines starting with `TcpExt:` show TCP-related events and the lines starting with `IpExt:` show IP-related events. Based on your system, you might see more contents. For each pair of lines, the following relation applies: The first line gives a list of event names, the second line gives the counters corresponding to the events from the first line in the same order.
+
+As you can see, I simply read the entire contents into a raw data file, because parsing it in a bash script would be too complicated. I then reduce the number of counters when the file is processed by the [[Raw Data Converter]].
+
 ```bash
 cat /proc/net/netstat > before_netstat.txt
 ```
 
+For my experiments, I only used three coutners:
+1. TCPOFOQueue - counts the number of packets that were enqueued on the out-of-order queue
+2. TCPHPHits - Counts the number of times a packet was able to take the 'fast path' in TCP
+3. TCPOFODrop - Counts the number of times a packet was dropped because the out-of-order queue did not have any more space
+
+If you are interested in any of the other events, they are documented rather well in the kernel itself under [/Documentation/networking/snmp_counter.rst](https://elixir.bootlin.com/linux/v6.16/source/Documentation/networking/snmp_counter.rst)
+
 ## Background Programs
 
+To say 'background program**s**' is a bit of an overstatement. At this point, the experiment script only runs one background program: `perf stat`.
 
+## perf stat
+
+`perf stat` collects counters on specified events (can be hardware counters or user-defined, so very powerful). I use it in my testing to count the number of instructions, cycles, LLC accesses, and LLC misses on the cores that my experiment runs on.
+
+```BASH
+$PERF_BIN stat -C $core_start-$((core_start + core_num - 1)) -e cycles,instructions,LLC-loads,LLC-load-misses -o $current_path/perf_stat.json &
+PERFSTAT_PID=$!
+# ==[run experiment]==
+[...]
+# ====================
+kill -s SIGINT $PERFSTAT_PID
+tail --pid=$PERFSTAT_PID -f /dev/null
+```
+
+In the first line, we run our `perf stat` by telling it which core it should count on (-C), what events to look out for (-e), and what file to write to (-o)
+Then we end the line with an `&`. What this does is that it detaches the process from the command line. Usually, when you run anything, the console will wait for it to finish, but if you put the `&`, it just detaches and throws the pid at you.
+![[Pasted image 20250806173359.png|500]]
+In the second line, we catch that pid using `$!` and save it in a variable so that we can kill the process later when the experiment is done.
+
+After the experiment has finished, we send the `SIGINT` signal to our saved pid. This is the same signal that is sent when pressing Ctrl-C on your keyboard.
+
+Lastly, with the `tail` instruction, we simply keep our shell script from running away before our process has successfully been killed. If you ever interrupted a heavy profiling program like `perf stat`, you know that sometimes it takes a little while to write all of its counters into the right output.
+
+## perf stat on separate cores
+
+In the case that we run the separate tasks of the experiment [[#App and Network Isolation - *separate*|separate]], `perf stat` becomes a little more complicated:
+```bash
+if [[ "$separate" == "1" ]]
+then
+	$PERF_BIN stat -C $IRQ_CORE-$((IRQ_CORE + IRQ_CORE_NUM - 1)) -e cycles,instructions,LLC-loads,LLC-load-misses -o $current_path/perf_stat_irq.json &
+	IRQPERFSTAT_PID=$!
+	if [[ "$PP_CORE_NUM" != "0" ]]
+	then
+		$PERF_BIN stat -C $PP_CORE-$((PP_CORE + PP_CORE_NUM - 1)) -e cycles,instructions,LLC-loads,LLC-load-misses -o $current_path/perf_stat_pp.json &
+		PPPERFSTAT_PID=$!
+	fi
+	$PERF_BIN stat -C $APP_CORE-$((APP_CORE + APP_CORE_NUM - 1)) -e cycles,instructions,LLC-loads,LLC-load-misses -o $current_path/perf_stat_app.json &
+	APPPERFSTAT_PID=$!
+fi
+```
+
+We run multiple instances of `perf stat` for different CPU core groups and write them all to separate files. Then, when all data has been written, we accumulate those separate files into one big `perf stat` file:
+
+```bash
+if [[ "$separate" == 1 ]]
+then
+	if test -f $current_path/perf_stat_irq.json
+	then 
+		echo "TYPE	IRQ" >> $current_path/data/$exp_name/perf_stat.json 
+		cat $current_path/perf_stat_irq.json >> $current_path/data/$exp_name/perf_stat.json
+		rm $current_path/perf_stat_irq.json
+	fi
+
+	if test -f $current_path/perf_stat_pp.json
+	then 
+		echo "TYPE	PP" >> $current_path/data/$exp_name/perf_stat.json 
+		cat $current_path/perf_stat_pp.json >> $current_path/data/$exp_name/perf_stat.json
+		rm $current_path/perf_stat_pp.json
+	fi
+
+	if test -f $current_path/perf_stat_app.json
+	then 
+		echo "TYPE	APP" >> $current_path/data/$exp_name/perf_stat.json 
+		cat $current_path/perf_stat_app.json >> $current_path/data/$exp_name/perf_stat.json
+		rm $current_path/perf_stat_app.json
+	fi
+
+fi
+```
+
+The result will be one big `perf_stat.json` file with the following structure:
+
+```txt
+TYPE IRQ
+
+...[contents of the perf stat data on irq cores]...
+
+TYPE PP
+
+...[contents of the perf stat data on packet processing cores]...
+
+TYPE APP
+
+...[contents of the perf stat data on application cores]...
+
+TYPE FULL
+
+...[contents of the perf stat data on all cores]...
+```
+
+As you might know by now, this file will then be given to the [[Raw Data Converter]] and it will format it into a nicely parse-able json file.
 # Argument List
 
 ## Experiment Name - *exp_name*

@@ -272,26 +272,9 @@ Some examples of this would be `perf` or `sar`.
 There is not as much to say about these background programs.
 The only thing I want to add is that if your counters are not high-resolution enough for you, i.e. you want to collect more detailed counters at a more fine-grained time scale, you can implement a background program that periodically accesses your counters. Just know that the more background programs you run, the more noise there is on your system that might compromise your experiment.
 
-To see how to integrate background programs into the experiment, lets look at the example of `perf stat`. `perf stat` collects counters on specified events (can be hardware counters or user-defined, so very powerful). I use it in my testing to count the number of instructions, cycles, LLC accesses, and LLC misses on the cores that my experiment runs on.
+To see how to integrate background programs into the experiment, lets look at the example of `perf stat`, taken from the [[Single Experiment Script]] explanation. 
 
-```BASH
-$PERF_BIN stat -C $core_start-$((core_start + core_num - 1)) -e cycles,instructions,LLC-loads,LLC-load-misses -o $current_path/perf_stat.json &
-PERFSTAT_PID=$!
-# ==[run experiment]==
-[...]
-# ====================
-kill -s SIGINT $PERFSTAT_PID
-tail --pid=$PERFSTAT_PID -f /dev/null
-```
-
-In the first line, we run our `perf stat` by telling it which core it should count on (-C), what events to look out for (-e), and what file to write to (-o)
-Then we end the line with an `&`. What this does is that it detaches the process from the command line. Usually, when you run anything, the console will wait for it to finish, but if you put the `&`, it just detaches and throws the pid at you.
-![[Pasted image 20250806173359.png|500]]
-In the second line, we catch that pid using `$!` and save it in a variable so that we can kill the process later when the experiment is done.
-
-After the experiment has finished, we send the `SIGINT` signal to our saved pid. This is the same signal that is sent when pressing Ctrl-C on your keyboard.
-
-Lastly, with the `tail` instruction, we simply keep our shell script from running away before our process has successfully been killed. If you ever interrupted a heavy profiling program like `perf stat`, you know that sometimes it takes a little while to write all of its counters into the right output.
+![[Single Experiment Script#perf stat]]
 
 And there you have it! When adding a new background program, just call it somewhere before the experiment and save its PID. Then, after the experiment, kill it.
 
