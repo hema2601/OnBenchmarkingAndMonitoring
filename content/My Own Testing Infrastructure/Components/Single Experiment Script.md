@@ -145,6 +145,26 @@ And that's the application execution portion of the script. I'll probably start 
 
 # Performing the System Configurations
 
+A lot of the system configuration will be covered in the section on [[#Argument List|the argument list]]. Still, there are a few general configurations that are done for every experiment. Those general system configurations are done to guarantee some predictability with where itnerrupts are executed. 
+### Disable irqbalance
+This is a solid configuration for any experiment that wants to be reproducible. `irqbalance` is a system service that tries to balance the interrupt load between cores by reassigning certain interrupts to be serviced by different cores. This is well-intentioned but in reality, it does not seem to result in any performance gain - at least in networking workloads - and just causes for experiments to yield less reliable results. Yet, it is turned on by default, so the experiment script turns it off every time, even though it might be redundant.
+
+```bash
+# Disable irqbalancer
+service irqbalance stop
+```
+
+### Map RX queues to CPU cores
+
+Every RX queue sends an interrupt to one specific core. We want to make sure that we have an even and predictable distribution of RX queue mappings. Especially on a system where `irqbalance` has been previously running, the mappings can be unpredictable.
+For this, every time when an experiment is run, we assign the RX queues' interrupts to the cores in our experiment's range in ascending order.
+
+```bash
+# Set Mappings
+$current_path/scripts/set_affinity.sh $intf $core_start
+```
+
+To understand how exactly those mappings are set, you should look at the `set_affinity.sh` script.
 # Orchestrating Data Collection
 
 As explained in the [[Adding New Data Sources|data source tutorial]], there are essentially three types of data collection in my experiment script:
@@ -592,6 +612,8 @@ PP: The packet processing of packets that have been steered to a new core in sof
 Only experiments using RPS or IAPS have all three.
 When using RSS, there is no PP task, because the packet processing is performed directly on the IRQ CPU. When using RFS, there is no possible PP and APP isolation, because RFS steers packets to be processed on the same core as the application by definition.
 
+
+**MORE WORK TO DO HERE**
 
 ## Maximum Segment Size - *mss*
 
