@@ -30,6 +30,10 @@ The individual parts and their interactions can be seen in the figure below:
 ![[Pasted image 20250808114154.png]]
 
 
+# How to Read this Guide
+
+I am not exactly good at documenting my work, so there is a good chance that some of these documents will be hard to read. 
+
 # What Can you Learn Here?
 
 Learn about the individual components:

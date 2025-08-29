@@ -301,7 +301,7 @@ Lastly, with the `tail` instruction, we simply keep our shell script from runnin
 
 ## perf stat on separate cores
 
-In the case that we run the separate tasks of the experiment [[#App and Network Isolation - *separate*|separate]], `perf stat` becomes a little more complicated:
+In the case that we run the separate tasks of the experiment on [[#App and Network Isolation - *separate*|separate]] cores, `perf stat` becomes a little more complicated:
 ```bash
 if [[ "$separate" == "1" ]]
 then
@@ -344,6 +344,10 @@ then
 	fi
 
 fi
+
+echo "TYPE	FULL" >> $current_path/data/$exp_name/perf_stat.json 
+cat $current_path/perf_stat.json >> $current_path/data/$exp_name/perf_stat.json
+rm $current_path/perf_stat.json
 ```
 
 The result will be one big `perf_stat.json` file with the following structure:
@@ -367,38 +371,242 @@ TYPE FULL
 ```
 
 As you might know by now, this file will then be given to the [[Raw Data Converter]] and it will format it into a nicely parse-able json file.
+
+## Raw Data Converter Dispatch
+
+There is not much to say about this part of the script. The [[Raw Data Converter]] is triggered for every single experiment within the experiment script. As arguments it gets the list of raw data files you want to convert. 
+
+```bash
+python3 $current_path/file_formatter.py $exp_name IRQ SOFTIRQ PACKET_CNT IPERF SOFTNET PROC_STAT PKT_STEER PERF_STAT IPERF_LAT BUSY_HISTO PKT_LAT_HISTO NETSTAT PKT_SIZE_HISTO
+```
+
 # Argument List
 
 ## Experiment Name - *exp_name*
 
+**Default**: "exp"
+
+The experiment name is the name of the sub-experiment folder where all the raw data files will be saved to. The experiment script allocates it in the `data/` folder.
+
+```bash
+#create directory
+mkdir $current_path/data/$exp_name
+```
+
+This variable is further used to:
+1. Tell the `after.sh` scripts where to save the concatted data files to
+2. Move the iperf output into the sub-experiment folder
+3. Compile the separate `perf stat` outputs into one file in the sub-experiment folder
+4. Give a target to the [[Raw Data Converter]]
 ## RSS support - *rss*
+
+**Default**: 1
+
+This argument indicates whether to use RSS or not. Turning off RSS is done by reducing the number of RX queues of our network interface to 1. When RSS is turned on, the number of RX queue is set to [[#RX Queue Number - *num_queue*|num_queue]]
+
+```bash
+if [[ "$rss" == "1" ]]
+then
+	ethtool -L $intf combined $num_queue
+	type="RSS"
+else
+	ethtool -L $intf combined 1
+	num_queue=1
+fi
+```
 
 ## RPS support - *rps*
 
+**Default**: 0
+
+This argument decides whether RPS is enabled or not. When it is set to 1, a script enabling RPS is run, otherwise a script disabling RPS is run. To enable RPS, a bitmask of cores that can be RPS steering target needs to be assigned. For that, the information in `PP_CORE` and `PP_CORE_NUM` is used. Those two describe the range of packet processing cores and are set based on [[#App and Network Isolation - *separate*|the 'separate' argument]].
+
+```bash
+if [[ "$rps" == "1" ]]
+then
+	#enable rps
+	$current_path/scripts/enable_rps.sh $intf $PP_CORE $PP_CORE_NUM
+	type="RPS"
+else
+	$current_path/scripts/disable_rps.sh $intf
+fi
+```
+
+RPS and RSS can be active at the same time.
+RPS and RFS should not be activated at the same time, since I do not exactly know what happens in that situation.
+
+For more info on how to actually activate/deactivate RPS, refer to the `enable_rps.sh` and `disable_rps.sh` scripts in the `scripts/` folder.
 ## RFS support - *rfs*
 
-## IAPS support - *iaps* (custom only)
+**Default**: 0
 
+This argument enables or disables RFS. It runs the `enable_rfs.sh` script when RFS is supposed to be turned on and `disable_rfs.sh` when it is supposed to be turned off. 
+
+```bash
+if [[ "$rfs" == "1" ]]
+then
+	#enable rfs
+	$current_path/scripts/enable_rfs.sh $intf
+	type="RFS"
+else
+	$current_path/scripts/disable_rfs.sh $intf
+fi
+```
+
+RFS does not work properly together with RSS.
+RFS and RPS should not be activated at the same time, since I do not exactly know what happens in that situation.
+
+For more info on how to actually activate/deactivate RFS, refer to the `enable_rfs.sh` and `disable_rfs.sh` scripts in the `scripts/` folder.
+## IAPS support - *custom* (custom only)
+
+**Default**: 0
+
+>[!warning]- Incompatible with unmodified system
+>If you want to make use of IAPS, you would have to install a custom kernel and load the IAPS module. If you try activating this feature on an unmodified system, this script will most likely throw an error.
+
+This argument enables or disables IAPS. In case of disabling IAPS, the script first checks if the system even supports IAPS. If yes, it is turned off, otherwise the argument is ignored.
+IAPS and its parameters are configured through module arguments. Information on the [[#IAPS steering configuration - *backup_core* (custom only)|backup core]] and [[#IAPS busy list configuration - *iaps_busy_list* (custom only)|busy list]] arguments will be in other parts. The `base_cpu` and `max_cpus` parameters need to be set to determine which CPUs can be chosen as steering targets by IAPS. Note that IAPS only supports range of CPUs, not detached CPU sets. Lastly, the `custom_toggle`  parameter is set to 1 to actually activate IAPS.
+
+Also, IAPS relies on other software-based packet steering schemes to be enabled. Therefore, we enable RPS by default when using IAPS and if IAPS requires RFS support, RFS will be enabled as well. Here, it is okay to enable RPS and RFS at the same time, because IAPS overwrites their actual steering algorithms. We only need RFS for the data structures it provides.
+
+I never checked whether IAPS relying on RFS works in a multiqueue setup together with RSS. 
+
+```bash
+if [[ "$custom" == "1" ]]
+then
+
+	$current_path/scripts/enable_rps.sh $intf $PP_CORE $PP_CORE_NUM	
+    echo $backup_core > /sys/module/pkt_steer_module/parameters/choose_backup_core
+	
+	if [[ "$backup_core" == "1" ]]
+	then
+		$current_path/scripts/enable_rfs.sh $intf
+	fi
+	echo $iaps_busy_list > /sys/module/pkt_steer_module/parameters/list_position
+	echo $PP_CORE > /sys/module/pkt_steer_module/parameters/base_cpu
+	echo $PP_CORE_NUM > /sys/module/pkt_steer_module/parameters/max_cpus
+	echo 1 > /sys/module/pkt_steer_module/parameters/custom_toggle
+	type="IAPS"
+else
+	echo "Disable Custom"
+	if test -f /sys/module/pkt_steer_module/parameters/custom_toggle
+	then 
+		echo 0 > /sys/module/pkt_steer_module/parameters/custom_toggle
+	fi
+fi
+```
 ## IAPS steering configuration - *backup_core* (custom only)
 
+**Default**:1
+
+>[!warning]- Incompatible with unmodified system
+>If you want to make use of IAPS, you would have to install a custom kernel and load the IAPS module. If you try activating this feature on an unmodified system, this script might throw an error.
+
+IAPS needs to choose a backup core in the case that its preferred steering target is unavailable. There are five different backup core choices.
+
+1: Application Core
+Rely on RFS data to steer the packet to the last application core
+
+2: Current Core
+Just send the packet to the current core to avoid triggering an interrupt altogether
+
+3: Hash-based
+Decide the next target by using the RPS hash over the available CPU set.
+
+4: Load Balancing
+Custom Load Balancing approach of IAPS. In its current state it would run the experimental Idle Core Activation 
+
+5: Previous Core
+Steer the packet to the previous target core
+
+Though the default value is 1, the most performant and most used option for this would be 3.
+
+It is set using a module parameter during the IAPS activation phase.
+
+```bash
+echo $backup_core > /sys/module/pkt_steer_module/parameters/choose_backup_core
+```
 ## Connection Number - *conns*
+
+**Default**: 6
+
+Number of connections spawned by the iperf client.
+
+```bash
+[...] ssh $remote_client_addr "iperf3 -c ${server_ip} -P ${conns} -M ${mss} -t ${time} > /dev/null"&
+```
 
 ## Target Network Interface - *intf*
 
+**Default**: ens4np0
+
+This is the name of the network interface on the system that you are running the experiment on. Note that this will be the name of your high-throughput interface where you are going to receive the actual iperf traffic through, not your motherboard's 1G interface. 
+
+The interface name is important to configure interface-specific parameters such as [[#RX Queue Number - *num_queue*|RX queues]] or [[#GRO Support - *gro*|GRO]], or to collect data through `ethtool`.
+
 ## IAPS busy list configuration - *iaps_busy_list* (custom only)
+
+**Default**: 0
+
+>[!warning]- Incompatible with unmodified system
+>If you want to make use of IAPS, you would have to install a custom kernel and load the IAPS module. If you try activating this feature on an unmodified system, this script might throw an error.
+
+You can consider this argument as pretty much depricated, but for completion's sake: IAPS maintains busy cores on a busy list. At some point, I was experimenting with whether it would make a difference to choose busy cores from the tail of the list, instead of the head. In short: It didn't.
+
+This argument is left in to not break any of my old setup iterator scripts, but the module parameter it is setting has been removed from IAPS's code.
+```bash
+echo $iaps_busy_list > /sys/module/pkt_steer_module/parameters/list_position
+```
 
 ## RX Queue Number - *num_queue* 
 
+**Default**: 8
+
+This argument decides the number of RX queues that are allocated on the network interface. Note that no matter the value of `num_queue`, in the case that RSS is deactivated, it will be set to 1. The number of RX queues is set using `ethtool`. 
+
+The number of RX queues also affects the distribution of CPU cores in the [[#App and Network Isolation - *separate*|separated]] task scenario, which will be further explained there.
 ## GRO Support - *gro*
 
+**Default**: 1
+
+This argument decides whether GRO will be turned off or not. It is turned on by default. GRO support is enabled or disabled using `ethtool` for the specified network interface.
+
+```bash
+if [[ "$gro" == "1" ]]
+then
+	ethtool -K $intf gro on
+else
+	ethtool -K $intf gro off
+fi
+```
 ## App and Network Isolation - *separate*
+
+**Default**: 0
+
+This argument indicates whether separate processing tasks are to be isolated from each other or not. There are three separate processing tasks in this experiment:
+
+APP: The iperf application 
+IRQ: The interrupt processing of incoming packets
+PP: The packet processing of packets that have been steered to a new core in software
+
+Only experiments using RPS or IAPS have all three.
+When using RSS, there is no PP task, because the packet processing is performed directly on the IRQ CPU. When using RFS, there is no possible PP and APP isolation, because RFS steers packets to be processed on the same core as the application by definition.
+
 
 ## Maximum Segment Size - *mss*
 
+**Default**: 1460
+
 ## Beginning of CPU Core Range - *core_start*
+
+**Default**: 0
 
 ## Number of Total CPU Cores - *core_num*
 
+**Default**: 8
+
 ## iperf Experiment Duration - *time*
+
+**Default**: 10
 
 
