@@ -64,13 +64,11 @@ Lets take a look at an example from my translations: `SOFTNETGen`
 class SOFTNETGen(JsonGenerator):
 
     def generate_json(self):
-        #print("Generate softnet.json")
         self.f.seek(0)
         self.f.truncate()
         json.dump(self.json_dict, self.f, indent=0)
         
     def read_source(self):
-        #print("Read original softnet.json")
         for line in self.f:
             parts = [x for x in line.split(' ') if x.strip()]
             
@@ -169,7 +167,6 @@ Now, after we have iterated over each line of the raw data and written it into o
 This happens in `generate_json`. This functions is the same for all my translations, but can be changed in case you want to add special formatting to your json output etc.
 ```python
 def generate_json(self):
-        #print("Generate softnet.json")
         self.f.seek(0)
         self.f.truncate()
         json.dump(self.json_dict, self.f, indent=0)

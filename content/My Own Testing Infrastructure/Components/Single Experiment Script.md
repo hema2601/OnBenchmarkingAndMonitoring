@@ -14,11 +14,11 @@ Still, most of the actual experiment setup is happening in this script. Everythi
 Explaining this piece of code in a concise manner is a bit difficult since the code in it is not exactly clean.
 
 Let's break this down into its three most fundamental functionalities:
-1. Running the target application
-2. Performing the system configurations
-3. Orchestrating data collection
+1. [[#Running the Target Application]]
+2. [[#Performing the System Configurations]]
+3. [[#Orchestrating Data Collection]]
 
-At the end of the document, I'll define all the arguments that the script takes and their purpose and implementation.
+At the end of the document, I'll define all the [[#Argument List|arguments]] that the script takes and their purpose and implementation.
 
 # Running the Target Application
 
@@ -128,7 +128,7 @@ Then, note how in the second line we save the pid of the remote iperf client int
 
 We need this pid so we can wait for iperf to finish using the `tail` command.
 
-In the `[...]` section, you could include anything you want to do after you started running iperf. In the past, I had some accessor programs that started collecting data during iperf execution but those have been deprecated and are just left in for *\~inspiration\~*.
+In the `[...]` section, you could include anything you want to do after you started running iperf. In the past, I had some accessor programs that started collecting data during iperf execution but those have been deprecated and removed. They used to look like the example below, in case you appreciate an example.
 `
 ```shell
 # Perform Latency Test 
@@ -428,7 +428,6 @@ This argument indicates whether to use RSS or not. Turning off RSS is done by re
 if [[ "$rss" == "1" ]]
 then
 	ethtool -L $intf combined $num_queue
-	type="RSS"
 else
 	ethtool -L $intf combined 1
 	num_queue=1
@@ -446,7 +445,6 @@ if [[ "$rps" == "1" ]]
 then
 	#enable rps
 	$current_path/scripts/enable_rps.sh $intf $PP_CORE $PP_CORE_NUM
-	type="RPS"
 else
 	$current_path/scripts/disable_rps.sh $intf
 fi
@@ -467,7 +465,6 @@ if [[ "$rfs" == "1" ]]
 then
 	#enable rfs
 	$current_path/scripts/enable_rfs.sh $intf
-	type="RFS"
 else
 	$current_path/scripts/disable_rfs.sh $intf
 fi
@@ -506,7 +503,6 @@ then
 	echo $PP_CORE > /sys/module/pkt_steer_module/parameters/base_cpu
 	echo $PP_CORE_NUM > /sys/module/pkt_steer_module/parameters/max_cpus
 	echo 1 > /sys/module/pkt_steer_module/parameters/custom_toggle
-	type="IAPS"
 else
 	echo "Disable Custom"
 	if test -f /sys/module/pkt_steer_module/parameters/custom_toggle
@@ -603,32 +599,80 @@ fi
 
 **Default**: 0
 
-This argument indicates whether separate processing tasks are to be isolated from each other or not. There are three separate processing tasks in this experiment:
+This argument indicates whether separate processing tasks are to be isolated from each other or not. There are three processing tasks in this experiment:
 
 APP: The iperf application 
 IRQ: The interrupt processing of incoming packets
 PP: The packet processing of packets that have been steered to a new core in software
 
 Only experiments using RPS or IAPS have all three.
-When using RSS, there is no PP task, because the packet processing is performed directly on the IRQ CPU. When using RFS, there is no possible PP and APP isolation, because RFS steers packets to be processed on the same core as the application by definition.
+When using RSS, there is no PP task, because the packet processing is performed directly on the IRQ CPU. When using RFS, there is no possible PP and APP isolation, because RFS steers packets to be processed on the same core as the application by definition, so the APP and PP cores are the same.
 
+When `separate` is 0, no explicit isolation is performed. IRQ cores will start from [[#Beginning of CPU Core Range - *core_start*|core_start]] and will be equal to the number of RX queues - [[#RX Queue Number - *num_queue*|num_queue]]. APP cores will be equal to the entire available range of cores, and PP cores will be equal to the entire range of cores excluding the IRQ cores. This was done so that for the RPS/IAPS experiments, packets would never be steered to the IRQ core, because it would introduce some unpredictabilities into the experiment.
+>[!warning]- In case you have less RX queues than cores during RSS...
+>the PP core range would actually be set, even though RSS has no PP cores. This will not affect the experiment execution in any way, since the `PP_CORE` value won't be used unless RPS/IAPS is active or `separate=1`. Still, strictly speaking this is incorrect behaviour and should you ever introduce additional functionalities regarding the PP cores, keep this in mind.
+```bash
+	IRQ_CORE=$core_start
+	IRQ_CORE_NUM=$num_queue
+	PP_CORE=$((core_start+num_queue))
+	PP_CORE_NUM=$((core_num-num_queue))
+	APP_CORE=$core_start
+	APP_CORE_NUM=$core_num
+```
 
-**MORE WORK TO DO HERE**
+If `separate` is 1, the tasks will be assigned to separate cores. 
+The IRQ cores stay the same. In the case that RFS or RSS is used, the PP core range is set to 0 and the APP core range is set to the entire range excluding the IRQ cores.
+When using RPS or IAPS (that doesn't rely on RFS), the range of cores not used for IRQ processing is divided equally between PP and APP cores. If the remaining core number is odd, APP processing will get one core more.
+
+```bash
+	IRQ_CORE=$core_start
+	IRQ_CORE_NUM=$num_queue
+
+	if [[ ( "$rps" == "1" ) || ( ( "$custom" == "1") && ( "$backup_core" != "1" ) ) ]]
+	then	
+		PP_CORE=$((core_start + IRQ_CORE_NUM))
+		PP_CORE_NUM=$(( (core_num - IRQ_CORE_NUM) / 2))
+		APP_CORE=$((core_start + IRQ_CORE_NUM + PP_CORE_NUM))
+		APP_CORE_NUM=$((core_num - IRQ_CORE_NUM - PP_CORE_NUM))
+	else
+		PP_CORE=0
+		PP_CORE_NUM=0
+		APP_CORE=$((core_start + IRQ_CORE_NUM))
+		APP_CORE_NUM=$((core_num - IRQ_CORE_NUM))
+	fi
+```
 
 ## Maximum Segment Size - *mss*
 
 **Default**: 1460
 
+This argument is passed directly to iperf. It controls the mss of the messages sent by it. 1460 is the standard size. If you want to test for smaller packets, you can adjust this value.
+
+```bash
+[...] ssh $remote_client_addr "iperf3 -c ${server_ip} -P ${conns} -M ${mss} -t ${time} > /dev/null"&
+```
 ## Beginning of CPU Core Range - *core_start*
 
 **Default**: 0
+
+This argument describes the beginning of the range of CPU cores available to the experiment. It works together with [[#Number of Total CPU Cores - *core_num*|core_num]] to define the CPU core range. Make sure that this is a valid CPU id.
+
+The range is: \[ core_start, core_start + [[#Number of Total CPU Cores - *core_num*|core_num]] )
 
 ## Number of Total CPU Cores - *core_num*
 
 **Default**: 8
 
+This argument describes the size of the available CPU core range. Note that the value is *not* a CPU id. It is an offset. It defines the CPU core range together with [[#Beginning of CPU Core Range - *core_start*|core_start]]. The CPU id given by [[#Beginning of CPU Core Range - *core_start*|core_start]] is included in the number of CPU cores.
+
+The range is: \[ [[#Beginning of CPU Core Range - *core_start*|core_start]], [[#Beginning of CPU Core Range - *core_start*|core_start]] + core_num )
 ## iperf Experiment Duration - *time*
 
 **Default**: 10
 
+This argument defines the runtime of one single iperf experiment. It is directly passed to iperf. 
 
+
+```bash
+[...] ssh $remote_client_addr "iperf3 -c ${server_ip} -P ${conns} -M ${mss} -t ${time} > /dev/null"&
+```

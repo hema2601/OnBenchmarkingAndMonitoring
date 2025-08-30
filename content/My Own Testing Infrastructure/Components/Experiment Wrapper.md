@@ -3,7 +3,6 @@ title: Experiment Wrapper
 draft: false
 tags:
 ---
-DONE
 
 The experiment wrapper is a script called `run_wrapper.sh` and was created to provide a more well-defined interface to the [[Single Experiment Script]]. The [[Single Experiment Script]] takes positional arguments, instead of options-based arguments, which got out of control as more and more arguments were added.
 

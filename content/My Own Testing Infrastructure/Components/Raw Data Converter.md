@@ -3,7 +3,6 @@ title: Raw Data Converter
 draft: false
 tags:
 ---
-DONE
 
 The Raw Data Converter is a beautiful little piece of software. It is quite easily extendable in contrast to the hard-coding from the [[Summarizer]].
 
@@ -19,9 +18,12 @@ class JsonGenerator:
     #[...]
 
     def __init__(self, path):
-        self.f = open(path, 'r+')
+        if os.path.isfile(path) is False:
+            raise ValueError('No file with the name {}'.format(path))
+            self.f = None
+        else:
+            self.f = open(path, 'r+')
         self.json_dict = list()
-
 	#[...]
 
     def generate_json(self):
@@ -84,8 +86,12 @@ So how does the Raw Data Converter operate?
 It takes two arguments: The name of the target experiment and a list of file types that should be converted. Then, it loops over every given file type, creates the generator, and dispatches the defined functions. This is where the inheritance shines. Since everything is implemented in the parent class, the main can be super generic and the user does not have to touch it at all.
 
 ```python
-folder = "/home/hema/Custom_Packet_Steering/data/" + sys.argv[1] + "/"
+current_path="/home/hema/testing_infrastructure/"
+folder = current_path + "data/" + sys.argv[1] + "/"
 
+# Error Handling
+# [...]
+#====
 
 for target in sys.argv[2:]:
 
@@ -116,11 +122,22 @@ If you are curious, you might wonder what the `instantiate` function does. This 
                 gen = __class__._tr.get(ftype.name + "Gen")
                 full_path = path + ftype.name.lower() + ".json"
 
-        return gen(full_path) if gen is not None else None
+        ret = None
+        try:
+            ret = gen(full_path)
+        except ValueError:
+            print("Warning: Failed to instantiate for {}! Skipping...".format(full_path))
+            return None
+        else:
+            return ret
 
     def __init_subclass__(cls):
         __class__._tr[cls.__name__] = cls
 ```
 
 I'm not a python person, so I do not understand this fully in-depth, but the gist is that the `__init_subclass__` function is called every time a class is created that inherits `JsonGenerator`. When that happens, we put that class on a list associated with the `JsonGenerator` class called `_tr`. Then, in our `instantiate` method, we check whether a class by the name `<file type>Gen` exists, and if it does we save it into the `gen` variable.
-Then we return the object that is created by calling the constructor associated with the `gen` object. Pretty neat, right?
+Then we try to create the object by calling the constructor associated with the `gen` object. If it fails, we print a warning , otherwise we return the object. Pretty neat, right?
+
+# The Different Generators
+
+There is unfortunately no time to explain the implementation of the individual generators that are contained in the Raw Data Converter. I go over an example in [[Adding New Data Sources#1.1.1.2 Example of a JsonGenerator implementation|this tutorial]]. I invite you to brush up on your knowledge of json usage in python and read the generators by yourself. After a few, the others will start looking quite alike.
