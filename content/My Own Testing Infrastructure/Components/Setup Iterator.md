@@ -14,7 +14,7 @@ An example setup operator can be found in the `experiment/` folder
 Lets take a look at it: `baseline_experiment.sh`
 This is an experiment suite for running all baseline experiments for the Linux-native packet steering schemes (except aRFS).
 
-```BASH
+```bash
 #!/bin/bash
 source my_lib.sh
 
@@ -70,7 +70,7 @@ Lets go through this step by step:
 
 ## Initialization
 
-```BASH
+```bash
 source my_lib.sh
 
 intf=$1
@@ -101,7 +101,7 @@ Lastly, the name of the experiment suite. This is the name of the folder that is
 
 ## General Setup
 
-```BASH
+```bash
 # General Setup Parameters that don't change
 set_intf $intf
 set_sep $ON
@@ -116,7 +116,7 @@ In the general setup, we define the values of our experiment that don't change. 
 An explanation to all the different arguments that can be changed in the experiment, you can refer to the [[Single Experiment Script#Argument List|argument list]] of the [[Single Experiment Script|main experiment script]].
 ## Sub-Experiment Setups 
 
-```BASH
+```bash
 # Experiment Setup 1: RSS
 exp_name="RSS"
 set_rss $ON

@@ -105,7 +105,7 @@ class SOFTNETGen(JsonGenerator):
 
 The file just contains the counters of `/proc/net/softnet_stats` before and after I ran iperf.
 
-``` Shell
+```bash
 echo /proc/net/softnet_stats > before.txt
 # ==[run experiment]==
 [...]
@@ -177,8 +177,8 @@ This is how we change from a file that looks like this:
 ![[Pasted image 20250806160754.png|800]]
 To this:
 (also truncated)
-![[Pasted image 20250806160949.png|500]]
 
+![[Pasted image 20250806160949.png|500]]
 
 #### 1.1.1.3 Make the experiment call you generator
 

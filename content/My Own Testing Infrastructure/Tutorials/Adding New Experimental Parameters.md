@@ -28,7 +28,7 @@ Currently, this option is commented out in my script and I would uncomment it ev
 
 The `run_mini_project.sh` script has gotten completely out of control with its arguments (hence the wrapper). 
 
-``` shell
+```bash
 exp_name=${1:-exp}
 rss=${2:-1}
 rps=${3:-0}
@@ -50,7 +50,7 @@ time=${16:-10}
 When adding a new parameter, add it at the end with the default value. Like that, the compatibility of older experiment suites that might rely on the current order won't be compromised.
 
 Like so:
-```shell
+```bash
 exp_name=${1:-exp}
 rss=${2:-1}
 rps=${3:-0}
@@ -83,7 +83,7 @@ The wrapper's purpose is to change the experiment script's position-based argume
 Anyways, what do you need to add to the wrapper when adding a new parameter? Just a variable holding the default and the option parsing for your parameter.
 
 The defaults are written at the top. Let's add our virtual parameter. Also lets give it the option `-v`.
-``` shell
+```bash
 # [DEFAULTS]
 
 EXP_NAME=exp 		# -n
@@ -112,7 +112,7 @@ VIRTUAL=0           # -v
 
 Now, we need to add the option parsing.
 Add `v:` to the getopts string at the top and the actual implementation at the bottom with the others.
-```shell
+```bash
 while getopts ":P:b:c:i:q:G:s:m:S:C:t:n:v:" opt; do
   case $opt in
     P) BITMASK="$OPTARG"
@@ -160,7 +160,7 @@ done
 
 Now, lastly, we add our `VIRTUAL` value to the call of our actual experiment script at the bottom.
 
-```shell
+```bash
 $current_path/run_mini_project.sh $EXP_NAME $RSS $RPS $RFS $IAPS $Backup_Core $Conns $INTF $IAPS_BUSY_LIST $NUM_QUEUE $GRO $SEPARATE $MSS $CORE_START $CORE_NUM $TIME $VIRTUAL
 ```
 
@@ -173,7 +173,7 @@ Now, the last step is integrating your parameter into the library for easy acces
 The library functions all work in a way that they get a value from the user and append that value to an ever-growing argument string with the correct option. That argument string will eventually be passed to the wrapper.
 
 For our `virtual` parameter, we should write a function like this:
-```shell
+```bash
 set_virtual(){
 	virtual=$1
 	ARG_STRING="$ARG_STRING -v $virtual"
@@ -189,7 +189,7 @@ Now, there is absolutely no rules to this. It will entirely rely on what your pa
 For the sake of completing the example of adding virtual support, let's add the actual implementation.
 
 
-```shell
+```bash
 if [[ "$virtual" == 0 ]]
 then
 	taskset -c "$APP_CORE-$((APP_CORE + APP_CORE_NUM - 1))" $IPERF_BIN -s -1 -J $IPERF_CUSTOM_ARGS > $current_path/iperf.json & ssh $remote_client_addr "iperf3 -c ${server_ip} -P ${conns} -M ${mss} -t ${time} > /dev/null"&

@@ -3,8 +3,6 @@ title: Adding New Visualizations
 draft: false
 tags:
 ---
-DONE
-
 All visualizations are done using vega lite and are displayed through the webserver. If you want to add a visualization, you have to:
 1. Create your visualization in vega lite
 2. Create and include your visualization as a file into the webserver
@@ -20,7 +18,9 @@ Its a super powerful tool that is very handy with automization.
 When creating your visualization in the browser, you will have to get your raw json data and paste it in to work on it. Make sure its not too big or your vega lite will lag or even crash.
 
 To get the raw data, you can just run your webserver and instead of accessing the index, you can access the `./data` subdirectory. 
+
 ![[Pasted image 20250807140010.png|700]]
+
 Then you just click to find the file you want to visualize and copy its json into vega.
 
 It might look like this: (the raw json was copied into the 'values' field)
@@ -73,9 +73,13 @@ It has two columns to represent different results next to each other. None of th
 
 Each graph has therefore two sections in the html:
 Left Column:
+
 ![[Pasted image 20250807144801.png|700]]
+
 Right Column:
+
 ![[Pasted image 20250807144830.png|700]]
+
 The naming of the inner div is up to you, but it is necessary that the second one has the same id as the first one attached with a 2. The code logic depends on it...
 
 Then, lastly, you need to add your vis into the `loadAllGraphs` function. 

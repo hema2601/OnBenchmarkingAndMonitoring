@@ -33,12 +33,12 @@ The actual iperf execution is a one-liner, but let's break it down into its logi
 The range of CPU cores for the experiment is defined by the arguments [[#Beginning of CPU Core Range - *core_start*|core_start]] and [[#Number of Total CPU Cores - *core_num*|core_num]]. According to whether we want to run the application and networking [[#App and Network Isolation - *separate*|separate]] or not, another variable set `APP_CORE` and `APP_CORE_NUM` will be set. Those two variables describe the beginning of the application-dedicated CPUs and their total number.
 
 Therefore, to contain our iperf application strictly within those dedicated cores, we use `taskset` before executing our iperf server. This looks like this: 
-``` shell
+```bash
 taskset -c "$APP_CORE-$((APP_CORE + APP_CORE_NUM - 1))" # Rest of the command
 ```
 
 That means that if we have 4 cores available to the application (`APP_CORE_NUM=4`) and those cores start from core number 1 (`APP_CORE=1`), we would run:
-``` shell
+```bash
 taskset -c 1-4 # Rest of the command
 ```
 
@@ -52,7 +52,7 @@ If you ever executed iperf, you know that most of the options are set on the cli
 
 Hence, the server execution is not affected by any command-line arguments and is always the same:
 
-``` shell
+```bash
 $IPERF_BIN -s -1 -J $IPERF_CUSTOM_ARGS > $current_path/iperf.json &
 ```
 
@@ -62,14 +62,14 @@ iperf's output is then redirected into an iperf.json file in the `current_path` 
 The `IPERF_BIN` and `IPERF_CUSTOM_ARGS` serve the purpose of flexibly converting between running vanilla iperf or my [custom iperf](https://github.com/hema2601/iperf).
 
 At the beginning of the script, those two are initialized to the normal iperf command and an empty string.
-``` shell
+```bash
 IPERF_BIN=iperf3
 IPERF_CUSTOM_ARGS=""
 ```
 
 Then, the script checks whether my custom iperf is installed on the system, and only if it finds it, will it change the command and argument string.
 
-``` shell
+```bash
 if command -v iperf3_napi &> /dev/null
 then
 	IPERF_BIN=iperf3_napi
@@ -91,7 +91,7 @@ Now that we executed the server, the last thing left to do is to execute the cli
 
 This can be fixed with these two things: ssh remote command execution and password-less ssh.
 The first one is a basic feature of `ssh` that I wasn't aware of. If you pass a string into your `ssh` command, it will execute that string as a command on the remote server. That means that if you run
-``` shell
+```bash
 ssh username@ip "ls"
 ```
 you'll just print your remote home-directory to the shell. Pretty neat.
@@ -99,7 +99,7 @@ you'll just print your remote home-directory to the shell. Pretty neat.
 Still, you'd have to put in your password, which would stall the experiment. So for this to fully work you have to set up password-less ssh between your nodes. How to do that is covered [[Setting up and Running any Experiments in Your Own Environment|here]].
 
 Knowing that, we can now look at the remote client execution:
-``` shell
+```bash
 ssh $remote_client_addr "iperf3 -c ${server_ip} -P ${conns} -M ${mss} -t ${time} > /dev/null"&
 ```
 
@@ -115,7 +115,7 @@ Lastly, note that we are sending the iperf client's output into `/dev/null`. Thi
 ## Putting it all together
 
 Now lets take a look at the full application execution:
-``` shell
+```bash
 taskset -c "$APP_CORE-$((APP_CORE + APP_CORE_NUM - 1))" $IPERF_BIN -s -1 -J $IPERF_CUSTOM_ARGS > $current_path/iperf.json & ssh $remote_client_addr "iperf3 -c ${server_ip} -P ${conns} -M ${mss} -t ${time} > /dev/null"&
 IPERF_PID=$!
 [...]
@@ -130,7 +130,7 @@ We need this pid so we can wait for iperf to finish using the `tail` command.
 
 In the `[...]` section, you could include anything you want to do after you started running iperf. In the past, I had some accessor programs that started collecting data during iperf execution but those have been deprecated and removed. They used to look like the example below, in case you appreciate an example.
 `
-```shell
+```bash
 # Perform Latency Test 
 sleep 3
 if test -f /proc/latency_module; then
@@ -223,35 +223,45 @@ Let's take a look what the different counters represent. Keep in mind that one r
 >
 >
 
-1st Column: Processed Packets
-	This is the only counter that is incremented on a normal system. It gets incremented in `__netif_receive_skb_core` (specifically [here](https://elixir.bootlin.com/linux/v6.16/source/net/core/dev.c#L5782)). This represents the number of GRO-aggregated packets entering the stack. Therefore, it will be different from the number of packets you would see reported by something like `ethtool`.
+**1st Column: Processed Packets**
 
-2nd Column: Dropped Packets
-	This counter represents the number of packets dropped at **the softnet backlog**. Do not confuse it with packet drops at the NIC (Use `ethtool` for that). If this column is anything other than 0, you should reconsider your setup. The default maximum length of the backlog (which is used during software-based packet steering) is [configured to be 1000](https://elixir.bootlin.com/linux/v6.16/source/net/core/hotdata.c#L17). So if this counter is not 0, either you configured the backlog length to be very low, or your software queues are building up beyond 1000 packets, which would be very bad. Another third option is that a packet was dropped due to exceeding the CPU's flow limit, which is further explained in the 11th Column part.
+This is the only counter that is incremented on a normal system. It gets incremented in `__netif_receive_skb_core` (specifically [here](https://elixir.bootlin.com/linux/v6.16/source/net/core/dev.c#L5782)). This represents the number of GRO-aggregated packets entering the stack. Therefore, it will be different from the number of packets you would see reported by something like `ethtool`.
 
-3rd Column: Time Squeeze
-	A 'time squeeze' in this situation refers to the scenario when one polling cycle of NAPI exceeds its allocated runtime. This happens in [two scenarios](https://elixir.bootlin.com/linux/v6.16/source/net/core/dev.c#L7611): Either when it has exhausted its [packet limit of 300 packets](https://elixir.bootlin.com/linux/v6.16/source/net/core/hotdata.c#L12), or it exceeded its [time limit of 2 jiffies](https://elixir.bootlin.com/linux/v6.16/source/net/core/hotdata.c#L14). In my experience, this counter increases very rarely. The napi structs used during software-based packet steering are [initialized to the value of `weight_p`](https://elixir.bootlin.com/linux/v6.16/source/net/core/dev.c#L12826), which is [set to 64](https://elixir.bootlin.com/linux/v6.16/source/net/core/dev.c#L4787), so their limit is well below the 300 packet limit. The napi structs used for the initial packet processing are defined by the drivers, so they might exceed the limit, but it is safe to assume that they will operate within a sensible limit. Most likely when the time squeeze counter is increased, it will be because some packet took abnormally long to be processed and therefore NAPI ran out of time.
+**2nd Column: Dropped Packets**
 
-4th to 9th Column: Zero
-	These columns are hard-coded to be 0. I used some of these columns to publish my custom data counters without having to set up a new proc file.
+This counter represents the number of packets dropped at **the softnet backlog**. Do not confuse it with packet drops at the NIC (Use `ethtool` for that). If this column is anything other than 0, you should reconsider your setup. The default maximum length of the backlog (which is used during software-based packet steering) is [configured to be 1000](https://elixir.bootlin.com/linux/v6.16/source/net/core/hotdata.c#L17). So if this counter is not 0, either you configured the backlog length to be very low, or your software queues are building up beyond 1000 packets, which would be very bad. Another third option is that a packet was dropped due to exceeding the CPU's flow limit, which is further explained in the 11th Column part.
 
-10th Column: Received RPS
-	This column counts how often a core received an RPS request. In other words, this is how often a core was notified through an IPI to start processing packets from the backlog. It is increased [here](https://elixir.bootlin.com/linux/v6.16/source/net/core/dev.c#L5035).
+**3rd Column: Time Squeeze**
 
-11th Column: Flow Limit Count
-	I haven't worked with this counter a lot. To the best of my understanding, when using software-based packet steering, specifically when using RFS, every core is assigned a limit of how many concurrent flows it is allowed to handle. If a new skb arrives and causes the number of concurrent flows handled by the CPU core to overflow, the [counter is increased](https://elixir.bootlin.com/linux/v6.16/source/net/core/dev.c#L5132). In this case, the packet is dropped and the counter in column 2 will be increased as well. I don't think I have ever seen this counter increase in my experiments, so I never bothered to fully hunt down the logic of flow limits in the code, so take this explanation with a grain of salt.
+A 'time squeeze' in this situation refers to the scenario when one polling cycle of NAPI exceeds its allocated runtime. This happens in [two scenarios](https://elixir.bootlin.com/linux/v6.16/source/net/core/dev.c#L7611): Either when it has exhausted its [packet limit of 300 packets](https://elixir.bootlin.com/linux/v6.16/source/net/core/hotdata.c#L12), or it exceeded its [time limit of 2 jiffies](https://elixir.bootlin.com/linux/v6.16/source/net/core/hotdata.c#L14). In my experience, this counter increases very rarely. The napi structs used during software-based packet steering are [initialized to the value of `weight_p`](https://elixir.bootlin.com/linux/v6.16/source/net/core/dev.c#L12826), which is [set to 64](https://elixir.bootlin.com/linux/v6.16/source/net/core/dev.c#L4787), so their limit is well below the 300 packet limit. The napi structs used for the initial packet processing are defined by the drivers, so they might exceed the limit, but it is safe to assume that they will operate within a sensible limit. Most likely when the time squeeze counter is increased, it will be because some packet took abnormally long to be processed and therefore NAPI ran out of time.
 
-12th Column: Combined Queue length of the backlog
-	A full explanation of the queue logistics of the backlog would be a bit much at this point. Just know this: Packets on the backlog can either be on the `process_queue` - the place where packets are *actively processed* - or on the `input_pkt_queue` - the place where packets await active processing. The combined length of those queues is stored in the 12th column.
+**4th to 9th Column: Zero**
 
-13th Column: CPU number
-	*Finally*. After 12 index-less hexadecimal numbers somebody thought of adding an index to this proc file and probably wasn't able to add it at the beginning, because it would break things. 
+These columns are hard-coded to be 0. I used some of these columns to publish my custom data counters without having to set up a new proc file.
 
-14th Column: input queue length
-	This value represents the number of packets currently awaiting active processing on the backlog. This value together with the value from the 15th column add up to the 12th column.
+**10th Column: Received RPS**
 
-15th Column: process queue length
-	This value represents the number of packets being actively processed by this CPU from the backlog. This value together with the value from the 14th column add up to the 12th column.
+This column counts how often a core received an RPS request. In other words, this is how often a core was notified through an IPI to start processing packets from the backlog. It is increased [here](https://elixir.bootlin.com/linux/v6.16/source/net/core/dev.c#L5035).
+
+**11th Column: Flow Limit Count**
+
+I haven't worked with this counter a lot. To the best of my understanding, when using software-based packet steering, specifically when using RFS, every core is assigned a limit of how many concurrent flows it is allowed to handle. If a new skb arrives and causes the number of concurrent flows handled by the CPU core to overflow, the [counter is increased](https://elixir.bootlin.com/linux/v6.16/source/net/core/dev.c#L5132). In this case, the packet is dropped and the counter in column 2 will be increased as well. I don't think I have ever seen this counter increase in my experiments, so I never bothered to fully hunt down the logic of flow limits in the code, so take this explanation with a grain of salt.
+
+**12th Column: Combined Queue length of the backlog**
+
+A full explanation of the queue logistics of the backlog would be a bit much at this point. Just know this: Packets on the backlog can either be on the `process_queue` - the place where packets are *actively processed* - or on the `input_pkt_queue` - the place where packets await active processing. The combined length of those queues is stored in the 12th column.
+
+**13th Column: CPU number**
+
+*Finally*. After 12 index-less hexadecimal numbers somebody thought of adding an index to this proc file and probably wasn't able to add it at the beginning, because it would break things. 
+
+**14th Column: input queue length**
+
+This value represents the number of packets currently awaiting active processing on the backlog. This value together with the value from the 15th column add up to the 12th column.
+
+**15th Column: process queue length**
+
+This value represents the number of packets being actively processed by this CPU from the backlog. This value together with the value from the 14th column add up to the 12th column.
 
 If you want to check for yourself, the proc file is printed [here](https://elixir.bootlin.com/linux/v6.16/source/net/core/net-procfs.c#L145).
 
@@ -312,7 +322,9 @@ tail --pid=$PERFSTAT_PID -f /dev/null
 
 In the first line, we run our `perf stat` by telling it which core it should count on (-C), what events to look out for (-e), and what file to write to (-o)
 Then we end the line with an `&`. What this does is that it detaches the process from the command line. Usually, when you run anything, the console will wait for it to finish, but if you put the `&`, it just detaches and throws the pid at you.
+
 ![[Pasted image 20250806173359.png|500]]
+
 In the second line, we catch that pid using `$!` and save it in a variable so that we can kill the process later when the experiment is done.
 
 After the experiment has finished, we send the `SIGINT` signal to our saved pid. This is the same signal that is sent when pressing Ctrl-C on your keyboard.
